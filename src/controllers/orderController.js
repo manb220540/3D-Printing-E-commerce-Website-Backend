@@ -3,6 +3,10 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
+const { STLLoader } = require('../utils/STLLoader');
+
+
+
 
 // Tạo đơn hàng mới
 exports.createOrder = async (req, res) => {
@@ -194,8 +198,22 @@ exports.updateOrderStatus = async (req, res) => {
 exports.getUserOrders = async (req, res) => {
   try {
     const userId = req.user.id;
+    // const [orders] = await db.execute(
+    //   'SELECT id, total_amount, status, shipping_address, phone_number, order_date, updated_at, order_code FROM orders WHERE user_id = ?',
+    //   [userId]
+    // );
     const [orders] = await db.execute(
-      'SELECT id, total_amount, status, shipping_address, phone_number, order_date, updated_at, order_code FROM orders WHERE user_id = ?',
+      `SELECT o.id, o.user_id, o.total_amount, o.status, o.shipping_address, 
+              o.phone_number, o.order_date, o.updated_at, o.order_code, 
+              u.username,
+              pf.file_path, pf.file_type,
+              pc.material, pc.color, pc.layer_height, pc.infill, pc.size_x, pc.size_y, pc.size_z
+       FROM orders o
+       JOIN users u ON o.user_id = u.id
+       LEFT JOIN print_files pf ON o.id = pf.order_id
+       LEFT JOIN print_customizations pc ON o.id = pc.order_id
+       WHERE o.user_id = ?
+       ORDER BY o.order_date DESC`,
       [userId]
     );
     res.json(orders);
@@ -206,23 +224,48 @@ exports.getUserOrders = async (req, res) => {
 };
 
 // Lấy tất cả đơn hàng
+// exports.getAllOrders = async (req, res) => {
+//   if (!req.user || req.user.role !== 'admin') {
+//     return res.status(403).json({ message: 'Bạn không có quyền thực hiện hành động này.' });
+//   }
+//   try {
+//     const [orders] = await db.execute(
+//       'SELECT o.id, o.user_id, o.total_amount, o.status, o.shipping_address, o.phone_number, o.order_date, o.updated_at, o.order_code, u.username FROM orders o JOIN users u ON o.user_id = u.id'
+//     );
+//     if (orders.length === 0) {
+//       return res.json([]); // Return empty array if no orders
+//     }
+//     res.json(orders);
+//   } catch (error) {
+//     console.error('Lỗi lấy tất cả đơn hàng:', error);
+//     res.status(500).json({ message: 'Lỗi máy chủ nội bộ' });
+//   }
+// };
+// Lấy tất cả đơn hàng
 exports.getAllOrders = async (req, res) => {
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Bạn không có quyền thực hiện hành động này.' });
   }
   try {
     const [orders] = await db.execute(
-      'SELECT o.id, o.user_id, o.total_amount, o.status, o.shipping_address, o.phone_number, o.order_date, o.updated_at, o.order_code, u.username FROM orders o JOIN users u ON o.user_id = u.id'
+      `SELECT o.id, o.user_id, o.total_amount, o.status, o.shipping_address, 
+              o.phone_number, o.order_date, o.updated_at, o.order_code, 
+              u.username,
+              pf.file_path, pf.file_type,
+              pc.material, pc.color, pc.layer_height, pc.infill, pc.size_x, pc.size_y, pc.size_z
+       FROM orders o
+       JOIN users u ON o.user_id = u.id
+       LEFT JOIN print_files pf ON o.id = pf.order_id
+       LEFT JOIN print_customizations pc ON o.id = pc.order_id
+       ORDER BY o.order_date DESC`
     );
-    if (orders.length === 0) {
-      return res.json([]); // Return empty array if no orders
-    }
     res.json(orders);
   } catch (error) {
     console.error('Lỗi lấy tất cả đơn hàng:', error);
     res.status(500).json({ message: 'Lỗi máy chủ nội bộ' });
   }
 };
+
 
 // Lấy chi tiết đơn hàng
 exports.getOrderDetails = async (req, res) => {
@@ -293,5 +336,109 @@ exports.getRecentOrders = async (req, res) => {
   } catch (error) {
     console.error('Lỗi lấy đơn hàng gần đây:', error);
     res.status(500).json({ message: 'Lỗi máy chủ nội bộ' });
+  }
+};
+
+exports.createCustomOrder = async (req, res) => {
+  console.log('Request file:', req.file); // Thêm log này
+  console.log('Request body:', req.body); // Kiểm tra body
+  if (!req.user || req.user.role !== 'user') {
+    if (req.file) fs.unlinkSync(req.file.path); // Xóa file nếu không có quyền
+    return res.status(403).json({ message: 'Bạn không có quyền thực hiện hành động này.' });
+  }
+
+  const { shippingAddress, phoneNumber, paymentMethod, material, color, layerHeight, infill, sizeX, sizeY, sizeZ } = req.body;
+  const file = req.file;
+
+  try {
+    if (!file) return res.status(400).json({ message: 'Vui lòng tải lên file in 3D.' });
+
+    // Tính toán giá tạm thời (cần điều chỉnh theo công thức thực tế)
+    const basePrice = 10.0; // Giá cơ bản
+    const materialCost = { PLA: 1.0, ABS: 1.5, PETG: 1.2 }[material] || 1.0;
+    const weightEstimate = (sizeX * sizeY * sizeZ) / 1000; // Ước lượng trọng lượng (cm³ -> kg)
+    const printTimeEstimate = (sizeZ / layerHeight) * 10; // Ước lượng thời gian in (phút)
+    const totalPrice = basePrice + (weightEstimate * materialCost * 5) + (printTimeEstimate * 0.1);
+
+    // Tạo đơn hàng mới
+    const [result] = await db.execute(
+      'INSERT INTO orders (user_id, total_amount, status, shipping_address, phone_number, payment_method, payment_status, order_code) VALUES (?, ?, ?, ?, ?, ?, ?, UUID())',
+      [req.user.id, totalPrice, 'confirmed', shippingAddress, phoneNumber, paymentMethod, 'unpaid']
+    );
+    const orderId = result.insertId;
+    const [newOrder] = await db.execute('SELECT order_code FROM orders WHERE id = ?', [orderId]);
+    const orderCode = newOrder[0].order_code;
+
+    // Lưu file in
+    const filePath = `/uploads/print_files/${file.filename}`;
+    await db.execute(
+      'INSERT INTO print_files (order_id, file_path, file_type) VALUES (?, ?, ?)',
+      [orderId, filePath, path.extname(file.originalname).toLowerCase()]
+    );
+
+    // Lưu tùy chỉnh
+    await db.execute(
+      'INSERT INTO print_customizations (order_id, material, color, layer_height, infill, size_x, size_y, size_z) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [orderId, material, color, layerHeight, infill, sizeX, sizeY, sizeZ]
+    );
+
+    // Thêm thông báo
+    await db.execute(
+      'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+      [req.user.id, `Đơn hàng in 3D ${orderCode} đã được tạo vào ${new Date().toLocaleString('vi-VN')}.`]
+    );
+    const [admins] = await db.execute('SELECT id FROM users WHERE role = ?', ['admin']);
+    const adminIds = admins.map(admin => admin.id);
+    if (adminIds.length > 0) {
+      const adminNotifications = adminIds.map(adminId =>
+        db.execute(
+          'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
+          [adminId, `Có đơn hàng in 3D mới ${orderCode} từ ${req.user.username} vào ${new Date().toLocaleString('vi-VN')}.`]
+        )
+      );
+      await Promise.all(adminNotifications);
+    }
+
+    res.status(201).json({ message: 'Đơn hàng in 3D đã được tạo', orderId, totalPrice });
+  } catch (error) {
+    console.error('Lỗi tạo đơn hàng in 3D:', error);
+    if (req.file) fs.unlinkSync(req.file.path); // Xóa file nếu lỗi
+    res.status(500).json({ message: 'Lỗi máy chủ nội bộ', details: error.message });
+  }
+};
+
+// Kiểm tra file STL hợp lệ
+exports.checkFile = async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Không có file để kiểm tra.' });
+
+  try {
+    const filePath = req.file.path;
+    const arrayBuffer = fs.readFileSync(filePath);
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    if (extension !== '.stl') {
+      throw new Error('Chỉ chấp nhận file .STL.');
+    }
+
+    const loader = new STLLoader();
+    loader.parse(arrayBuffer, () => {}, (error) => {
+      throw new Error(error.message);
+    });
+
+    res.json({ message: 'File hợp lệ.' });
+  } catch (error) {
+    console.error('Lỗi kiểm tra file:', error);
+    if (req.file) fs.unlinkSync(req.file.path);
+    res.status(500).json({ message: 'Lỗi kiểm tra file: ' + error.message });
+  }
+};
+exports.updateOrderPriority = async (req, res) => {
+  if (!req.user || req.user.role !== 'admin') return res.status(403).json({ message: 'Chỉ admin có quyền.' });
+
+  const { id, priority } = req.body;
+  try {
+    await db.execute('UPDATE orders SET priority = ? WHERE id = ?', [priority, id]);
+    res.json({ message: 'Đã cập nhật ưu tiên.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi máy chủ nội bộ.' });
   }
 };
