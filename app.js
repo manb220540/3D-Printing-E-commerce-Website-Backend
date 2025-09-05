@@ -9,6 +9,7 @@ const cartRoutes = require('./src/routes/cartRoutes');
 const blogRoutes = require('./src/routes/blogRoutes'); // Import blog routes
 const notificationRoutes = require('./src/routes/notificationRoutes'); // Import notification routes
 const orderRoutes = require('./src/routes/orderRoutes'); // Import order routes
+const geminiRoutes = require('./src/routes/gemini'); // Import gemini routes
 
 
 
@@ -32,6 +33,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/blogs', blogRoutes); // Sử dụng blog routes
 app.use('/api/notifications', notificationRoutes); // Sử dụng notification routes
 app.use('/api/orders', orderRoutes); // Sử dụng order routes
+app.use('/api/gemini', geminiRoutes);
 
 // Test route
 app.get('/', (req, res) => {
