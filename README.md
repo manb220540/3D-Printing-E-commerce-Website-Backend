@@ -93,15 +93,22 @@ npm start
 
 ---
 
-### Project Structure
+## Project Structure
 
-- `node_modules/`: Dependencies installed via npm.
-- `public/`: Static files (e.g., uploads).
-- `src/`: Source code files.
-- `.env`: Environment variables configuration.
-- `.gitignore`: Specifies files to ignore in Git.
-- `app.js`: Main application file.
-- `package.json`: Project metadata and dependencies.
+```bash
+frontend/
+├── node_modules/       # Dependenciesinstalled via npm.
+├── public/             #  Static files (e.g., uploads).
+├── src/                # Source code files.
+│   ├── config/
+│   ├── controllers/
+│   ├── middlewares/
+│   ├── routes/
+│   ├── utils/
+├── .env                # Environment variables configuration.
+├── App.js              # Main application file.
+├── package.json        # Project metadata and dependencies
+```
 
 ---
 
