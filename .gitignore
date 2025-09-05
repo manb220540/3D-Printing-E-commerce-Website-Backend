@@ -1,4 +1,6 @@
 public/uploads/
+.DS_Store
+.env
 # Logs
 logs
 *.log
